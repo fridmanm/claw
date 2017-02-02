@@ -9,7 +9,7 @@ import healpy as hp
 import scipy.linalg as la
 import copy
 class MeasureCl:
-    def __init__(self, Cl, Weight, Noise,Ng=1000):
+    def __init__(self, Cl, Weight, Noise,Ng=1000, m0neg=False):
         """
           When initializing, set it up with Cl object for binning
           and cov matrix prediction.
@@ -19,6 +19,7 @@ class MeasureCl:
         """
           
         self.Cl=copy.deepcopy(Cl)
+        self.m0neg=m0neg
         self.Weight=Weight
         self.Noise=Noise
         self.Nside=Cl.Nside
@@ -37,18 +38,24 @@ class MeasureCl:
                 lar.append(l)
         ## now get mapping from lmax to bins
         self.binlist=self.Cl.ndx[lar]
+        self.initbinlist=self.binlist
 
-    def _getIM(self,mp, addN=False):
+    def _getIM(self,mp, addN=False, m0neg=False):
         if addN:
             mp+=np.random.normal(0,self.Noise)
         mp*=self.Weight
         almsq=abs(hp.map2alm(mp)**2)
+        self.binlist=self.initbinlist
+        if m0neg:
+            index=np.arange(self.lmax-1)    #first 3*Nside elements corespond to m=0 modes
+            almsq=np.delete(almsq,index)
+            self.binlist=np.delete(self.binlist,index)
         return self.bnorm*np.bincount(self.binlist,weights=almsq)
 
     def getNoiseBias(self):
         nv=[]
         for cc in range(self.Ng):
-            nv.append(self._getIM(np.zeros(self.Npix),addN=True))
+            nv.append(self._getIM(np.zeros(self.Npix),addN=True,m0neg=self.m0neg))
         nv=np.array(nv)
         self.nbias=nv.mean(axis=0)
         self.ncov=np.cov(nv,rowvar=False)
@@ -67,7 +74,7 @@ class MeasureCl:
                 else:
                     clx[self.Cl.lmin[i]:self.Cl.lmax[i]]=1.0
                 m=hp.synfast(clx,self.Nside,verbose=False)
-                cmat[i,:]+=self._getIM(m)
+                cmat[i,:]+=self._getIM(m,m0neg=self.m0neg)
         self.coupmat=cmat/self.Ng
         self.icoupmat=la.inv(self.coupmat)
 
@@ -81,7 +88,7 @@ class MeasureCl:
             nv=[]
             for cc in range(self.Ng):
                 m=hp.synfast(clx,self.Nside,verbose=False)
-                r=self._getIM(m,addN=True)
+                r=self._getIM(m,addN=True,m0neg=self.m0neg)
                 nv.append(r)
 
             nv=np.array(nv)
@@ -89,12 +96,11 @@ class MeasureCl:
         cov=np.dot(self.icoupmat,np.dot(tcov,self.icoupmat.T))
         self.Cl.setCov(cov[:self.nbins, :self.nbins])
 
-    def getEstimate(self,mp):
+    def getEstimate(self,mp,m0neg):
         if not hasattr(self,"coupmat"):
             self.getCouplingMat()
         if not hasattr(self,"nbias"):
             self.getNoiseBias()
-        v=self._getIM(mp)
+        v=self._getIM(mp,m0neg=m0neg)
         self.Cl.setVals(np.dot(self.icoupmat,v-self.nbias)[:-1])
         return self.Cl
-
