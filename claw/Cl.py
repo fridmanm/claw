@@ -27,6 +27,7 @@ class Cl:
                 lmin[0]=1
         # now adjust last bin until we have full
         # ell coverage to avoid aliasing
+        self.dl=lmaxdl[1]
         self.lmin=lmin
         self.lmax=lmax
         if Nside is not None:
@@ -65,4 +66,3 @@ class Cl:
 
     def chi2diag(self,theo):
         return ((theo.vals-self.vals)**2/self.cov.diagonal()).sum()
-
